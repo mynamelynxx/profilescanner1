@@ -134,7 +134,8 @@ public class ProfileScannerMod implements ClientModInitializer {
                 if (tokens < 0) { if (now - phaseStartTime > 1500) { phase = Phase.CLOSE_SCREEN; } break; }
                 if (tokens >= tokenThreshold) {
                     foundPlayer = playerQueue.get(currentIndex); foundTokens = tokens;
-                    stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.format("%,d", foundTokens) + " §aтокенов | Анархия-" + currentAnarchy + "!");
+                    client.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.format("%,d", foundTokens) + " §aтокенов | Анархия-" + currentAnarchy + "!");
                     return;
                 }
                 phase = Phase.CLOSE_SCREEN; break;
