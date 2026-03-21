@@ -10,6 +10,8 @@ import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.LoreComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -126,29 +128,17 @@ public class ProfileScannerMod implements ClientModInitializer {
                 break;
             }
             case READ_TOKENS: {
-    if (!(client.currentScreen instanceof HandledScreen<?>)) { currentIndex++; phase = Phase.SEND_COMMAND; break; }
-    if (now - phaseStartTime < READ_TOKENS_DELAY_MS) break;
-
-    // ОТЛАДКА — показать все строки tooltip
-    if (!(client.currentScreen instanceof HandledScreen<?> dbgScreen)) break;
-    var dbgSlots = dbgScreen.getScreenHandler().slots;
-    if (HEAD_SLOT < dbgSlots.size()) {
-        ItemStack dbgStack = dbgSlots.get(HEAD_SLOT).getStack();
-        if (!dbgStack.isEmpty()) {
-            List<Text> dbgTooltip = dbgStack.getTooltip(
-                net.minecraft.item.Item.TooltipContext.create(client.world),
-                client.player,
-                net.minecraft.item.tooltip.TooltipType.Default.BASIC
-            );
-            for (int ti = 0; ti < dbgTooltip.size(); ti++) {
-                client.player.sendMessage(Text.literal("§7[slot4 line" + ti + "] §f" + dbgTooltip.get(ti).getString()), false);
+                if (!(client.currentScreen instanceof HandledScreen<?>)) { currentIndex++; phase = Phase.SEND_COMMAND; break; }
+                if (now - phaseStartTime < READ_TOKENS_DELAY_MS) break;
+                long tokens = readTokensFromSlot(client);
+                if (tokens < 0) { if (now - phaseStartTime > 1500) { phase = Phase.CLOSE_SCREEN; } break; }
+                if (tokens >= tokenThreshold) {
+                    foundPlayer = playerQueue.get(currentIndex); foundTokens = tokens;
+                    stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.format("%,d", foundTokens) + " §aтокенов | Анархия-" + currentAnarchy + "!");
+                    return;
+                }
+                phase = Phase.CLOSE_SCREEN; break;
             }
-        } else {
-            client.player.sendMessage(Text.literal("§c[ProfileScanner] Слот 4 пустой!"), false);
-        }
-    }
-    phase = Phase.CLOSE_SCREEN; currentIndex++; break;
-}
             case CLOSE_SCREEN: {
                 if (client.currentScreen != null) client.setScreen(null);
                 currentIndex++; phase = Phase.SEND_COMMAND; break;
@@ -170,10 +160,31 @@ public class ProfileScannerMod implements ClientModInitializer {
         if (HEAD_SLOT >= slots.size()) return -1;
         ItemStack stack = slots.get(HEAD_SLOT).getStack();
         if (stack.isEmpty()) return -1;
-        List<Text> tooltip = stack.getTooltip(net.minecraft.item.Item.TooltipContext.create(client.world), client.player, net.minecraft.item.tooltip.TooltipType.Default.BASIC);
+
+        // Читаем lore напрямую из NBT компонента
+        LoreComponent lore = stack.get(DataComponentTypes.LORE);
+        if (lore != null) {
+            for (Text line : lore.lines()) {
+                Matcher m = TOKEN_PATTERN.matcher(line.getString());
+                if (m.find()) {
+                    try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "")); }
+                    catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+
+        // Запасной вариант — стандартный tooltip
+        List<Text> tooltip = stack.getTooltip(
+                net.minecraft.item.Item.TooltipContext.create(client.world),
+                client.player,
+                net.minecraft.item.tooltip.TooltipType.Default.BASIC
+        );
         for (Text line : tooltip) {
             Matcher m = TOKEN_PATTERN.matcher(line.getString());
-            if (m.find()) { try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "")); } catch (NumberFormatException ignored) {} }
+            if (m.find()) {
+                try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "")); }
+                catch (NumberFormatException ignored) {}
+            }
         }
         return -1;
     }
