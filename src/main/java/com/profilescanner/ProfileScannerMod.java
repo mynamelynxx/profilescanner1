@@ -12,7 +12,7 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.scoreboard.Team;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
@@ -226,14 +226,13 @@ public class ProfileScannerMod implements ClientModInitializer {
 
     private void buildPlayerQueue(MinecraftClient client) {
         List<PlayerListEntry> entries = new ArrayList<>(client.getNetworkHandler().getPlayerList());
-        // Берём в том же порядке что показывает сервер в табе
         entries.sort((a, b) -> {
-    net.minecraft.scoreboard.Team teamA = a.getScoreboardTeam();
-    net.minecraft.scoreboard.Team teamB = b.getScoreboardTeam();
-    String nameA = teamA != null ? teamA.getName() + a.getProfile().getName() : a.getProfile().getName();
-    String nameB = teamB != null ? teamB.getName() + b.getProfile().getName() : b.getProfile().getName();
-    return nameA.compareToIgnoreCase(nameB);
-});
+            Team teamA = a.getScoreboardTeam();
+            Team teamB = b.getScoreboardTeam();
+            String nameA = teamA != null ? teamA.getName() + a.getProfile().getName() : a.getProfile().getName();
+            String nameB = teamB != null ? teamB.getName() + b.getProfile().getName() : b.getProfile().getName();
+            return nameA.compareToIgnoreCase(nameB);
+        });
         playerQueue.clear();
         for (int i = 0; i < Math.min(entries.size(), 30); i++) {
             String name = entries.get(i).getProfile().getName();
