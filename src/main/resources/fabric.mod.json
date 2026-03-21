@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "profilescanner",
+  "version": "1.0.0",
+  "name": "ProfileScanner",
+  "description": "Automatically opens /profile for each player in the first two tab columns.",
+  "authors": ["you"],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.profilescanner.ProfileScannerMod"
+    ]
+  },
+  "mixins": [],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
