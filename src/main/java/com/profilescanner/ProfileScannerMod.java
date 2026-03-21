@@ -126,17 +126,29 @@ public class ProfileScannerMod implements ClientModInitializer {
                 break;
             }
             case READ_TOKENS: {
-                if (!(client.currentScreen instanceof HandledScreen<?>)) { currentIndex++; phase = Phase.SEND_COMMAND; break; }
-                if (now - phaseStartTime < READ_TOKENS_DELAY_MS) break;
-                long tokens = readTokensFromSlot(client);
-                if (tokens < 0) { if (now - phaseStartTime > 1500) { phase = Phase.CLOSE_SCREEN; } break; }
-                if (tokens >= tokenThreshold) {
-                    foundPlayer = playerQueue.get(currentIndex); foundTokens = tokens;
-                    stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.format("%,d", foundTokens) + " §aтокенов | Анархия-" + currentAnarchy + "!");
-                    return;
-                }
-                phase = Phase.CLOSE_SCREEN; break;
+    if (!(client.currentScreen instanceof HandledScreen<?>)) { currentIndex++; phase = Phase.SEND_COMMAND; break; }
+    if (now - phaseStartTime < READ_TOKENS_DELAY_MS) break;
+
+    // ОТЛАДКА — показать все строки tooltip
+    if (!(client.currentScreen instanceof HandledScreen<?> dbgScreen)) break;
+    var dbgSlots = dbgScreen.getScreenHandler().slots;
+    if (HEAD_SLOT < dbgSlots.size()) {
+        ItemStack dbgStack = dbgSlots.get(HEAD_SLOT).getStack();
+        if (!dbgStack.isEmpty()) {
+            List<Text> dbgTooltip = dbgStack.getTooltip(
+                net.minecraft.item.Item.TooltipContext.create(client.world),
+                client.player,
+                net.minecraft.item.tooltip.TooltipType.Default.BASIC
+            );
+            for (int ti = 0; ti < dbgTooltip.size(); ti++) {
+                client.player.sendMessage(Text.literal("§7[slot4 line" + ti + "] §f" + dbgTooltip.get(ti).getString()), false);
             }
+        } else {
+            client.player.sendMessage(Text.literal("§c[ProfileScanner] Слот 4 пустой!"), false);
+        }
+    }
+    phase = Phase.CLOSE_SCREEN; currentIndex++; break;
+}
             case CLOSE_SCREEN: {
                 if (client.currentScreen != null) client.setScreen(null);
                 currentIndex++; phase = Phase.SEND_COMMAND; break;
