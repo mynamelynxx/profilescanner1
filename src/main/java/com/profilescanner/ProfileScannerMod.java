@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
@@ -19,7 +20,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -103,7 +103,6 @@ public class ProfileScannerMod implements ClientModInitializer {
         if (!scanning) return;
         long now = System.currentTimeMillis();
 
-        // Anarchy switch wait
         if (switchingAnarchy && phase == Phase.WAIT_FOR_SCREEN) {
             if (now - phaseStartTime >= SWITCH_WAIT_MS) {
                 switchingAnarchy = false;
@@ -227,15 +226,12 @@ public class ProfileScannerMod implements ClientModInitializer {
     }
 
     private void buildPlayerQueue(MinecraftClient client) {
-        List<PlayerListEntry> sorted = new ArrayList<>(client.getNetworkHandler().getPlayerList());
-        sorted.sort((a, b) -> {
-            String na = a.getDisplayName() != null ? a.getDisplayName().getString() : a.getProfile().getName();
-            String nb = b.getDisplayName() != null ? b.getDisplayName().getString() : b.getProfile().getName();
-            return na.compareToIgnoreCase(nb);
-        });
+        List<PlayerListEntry> entries = new ArrayList<>(client.getNetworkHandler().getPlayerList());
+        // Берём в том же порядке что показывает сервер в табе
+        entries.sort(PlayerListHud.ENTRY_ORDERING);
         playerQueue.clear();
-        for (int i = 0; i < Math.min(sorted.size(), 40); i++) {
-            String name = sorted.get(i).getProfile().getName();
+        for (int i = 0; i < Math.min(entries.size(), 30); i++) {
+            String name = entries.get(i).getProfile().getName();
             if (name != null && !name.isBlank()) playerQueue.add(name);
         }
     }
