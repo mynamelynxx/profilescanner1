@@ -1,6 +1,8 @@
 package com.profilescanner;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -9,6 +11,7 @@ import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.command.argument.LongArgumentType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -49,8 +52,10 @@ public class ProfileScannerMod implements ClientModInitializer {
     private static final long WAIT_FOR_SCREEN_MS   = 3000;
     private static final long READ_TOKENS_DELAY_MS = 300;
     private static final long SWITCH_WAIT_MS       = 3000;
-    private static final long TOKEN_THRESHOLD      = 120_000;
     private static final int  HEAD_SLOT            = 4;
+
+    // Порог токенов — меняется командой /pstoken
+    private long tokenThreshold = 120_000;
 
     private static final Pattern TOKEN_PATTERN = Pattern.compile(
             "(?i)токен[^:]*:\\s*([\\d\\s,.']+)"
@@ -71,8 +76,31 @@ public class ProfileScannerMod implements ClientModInitializer {
             if (!overlay) onServerMessage(message.getString());
         });
 
+        // Команда /pstoken <число>
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(
+                ClientCommandManager.literal("pstoken")
+                    .then(ClientCommandManager.argument("amount", LongArgumentType.longArg(0))
+                        .executes(ctx -> {
+                            long newThreshold = LongArgumentType.getLong(ctx, "amount");
+                            tokenThreshold = newThreshold;
+                            ctx.getSource().sendFeedback(
+                                Text.literal("§a[ProfileScanner] Порог токенов установлен: §f" + String.format("%,d", tokenThreshold))
+                            );
+                            return 1;
+                        })
+                    )
+                    .executes(ctx -> {
+                        ctx.getSource().sendFeedback(
+                            Text.literal("§e[ProfileScanner] Текущий порог: §f" + String.format("%,d", tokenThreshold) + " §7| Использование: /pstoken <число>")
+                        );
+                        return 1;
+                    })
+            );
+        });
+
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
-        LOGGER.info("ProfileScanner loaded. K = start, L = stop.");
+        LOGGER.info("ProfileScanner loaded. K = start, L = stop. /pstoken to set threshold.");
     }
 
     private void onServerMessage(String text) {
@@ -118,7 +146,7 @@ public class ProfileScannerMod implements ClientModInitializer {
             case SEND_COMMAND: {
                 if (client.currentScreen != null) client.setScreen(null);
                 if (currentIndex >= playerQueue.size()) {
-                    client.player.sendMessage(Text.literal("§e[ProfileScanner] No one with " + TOKEN_THRESHOLD + "+ tokens on Анархия-" + currentAnarchy + ". Switching..."), false);
+                    client.player.sendMessage(Text.literal("§e[ProfileScanner] No one with " + String.format("%,d", tokenThreshold) + "+ tokens on Анархия-" + currentAnarchy + ". Switching..."), false);
                     phase = Phase.SWITCH_ANARCHY;
                     phaseStartTime = now;
                     break;
@@ -146,9 +174,9 @@ public class ProfileScannerMod implements ClientModInitializer {
                     break;
                 }
                 String name = playerQueue.get(currentIndex);
-                if (tokens >= TOKEN_THRESHOLD) {
+                if (tokens >= tokenThreshold) {
                     foundPlayer = name; foundTokens = tokens;
-                    stopScan(client, "§aFOUND: §f" + name + " §a— §f" + tokens + " §aтокенов on §fАнархия-" + currentAnarchy + "!");
+                    stopScan(client, "§aFOUND: §f" + name + " §a— §f" + String.format("%,d", foundTokens) + " §aтокенов on §fАнархия-" + currentAnarchy + "!");
                     return;
                 }
                 phase = Phase.CLOSE_SCREEN;
@@ -221,7 +249,7 @@ public class ProfileScannerMod implements ClientModInitializer {
         currentIndex = 0; scanning = true; foundPlayer = null;
         chatErrorReceived = false; switchingAnarchy = false;
         phase = Phase.SEND_COMMAND; phaseStartTime = System.currentTimeMillis();
-        client.player.sendMessage(Text.literal("§a[ProfileScanner] Starting on §fАнархия-" + currentAnarchy + " §a— §f" + playerQueue.size() + " §aplayers. L to stop."), false);
+        client.player.sendMessage(Text.literal("§a[ProfileScanner] Порог: §f" + String.format("%,d", tokenThreshold) + " §aтокенов | Анархия-" + currentAnarchy + " | §f" + playerQueue.size() + " §aигроков. L = стоп."), false);
     }
 
     private void buildPlayerQueue(MinecraftClient client) {
