@@ -5,7 +5,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
@@ -228,7 +227,13 @@ public class ProfileScannerMod implements ClientModInitializer {
     private void buildPlayerQueue(MinecraftClient client) {
         List<PlayerListEntry> entries = new ArrayList<>(client.getNetworkHandler().getPlayerList());
         // Берём в том же порядке что показывает сервер в табе
-        entries.sort(PlayerListHud.ENTRY_ORDERING);
+        entries.sort((a, b) -> {
+    net.minecraft.scoreboard.Team teamA = a.getScoreboardTeam();
+    net.minecraft.scoreboard.Team teamB = b.getScoreboardTeam();
+    String nameA = teamA != null ? teamA.getName() + a.getProfile().getName() : a.getProfile().getName();
+    String nameB = teamB != null ? teamB.getName() + b.getProfile().getName() : b.getProfile().getName();
+    return nameA.compareToIgnoreCase(nameB);
+});
         playerQueue.clear();
         for (int i = 0; i < Math.min(entries.size(), 30); i++) {
             String name = entries.get(i).getProfile().getName();
