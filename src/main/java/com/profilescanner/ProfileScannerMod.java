@@ -48,7 +48,7 @@ public class ProfileScannerMod implements ClientModInitializer {
     private static final long SWITCH_WAIT_MS = 3000;
     private static final int HEAD_SLOT = 4;
     private long tokenThreshold = 120000;
-    private static final Pattern TOKEN_PATTERN = Pattern.compile("(?i).*токен[^:]*:\\s*([\\d\\s,.']+)");
+    private static final Pattern TOKEN_PATTERN = Pattern.compile("Токенов:\\s*([\\d,. ]+)");
 
     @Override
     public void onInitializeClient() {
