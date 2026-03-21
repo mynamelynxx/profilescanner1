@@ -159,27 +159,36 @@ public class ProfileScannerMod implements ClientModInitializer {
         var slots = screen.getScreenHandler().slots;
         if (HEAD_SLOT >= slots.size()) return -1;
         ItemStack stack = slots.get(HEAD_SLOT).getStack();
-        if (stack.isEmpty()) return -1;
+        if (stack.isEmpty()) {
+            LOGGER.info("[ProfileScanner] Slot {} is empty", HEAD_SLOT);
+            return -1;
+        }
 
-        // Читаем lore напрямую из NBT компонента
+        LOGGER.info("[ProfileScanner] Slot {} item: {}", HEAD_SLOT, stack.getItem());
+
+        // Lore из NBT
         LoreComponent lore = stack.get(DataComponentTypes.LORE);
         if (lore != null) {
             for (Text line : lore.lines()) {
+                LOGGER.info("[ProfileScanner] Lore: '{}'", line.getString());
                 Matcher m = TOKEN_PATTERN.matcher(line.getString());
                 if (m.find()) {
                     try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "")); }
                     catch (NumberFormatException ignored) {}
                 }
             }
+        } else {
+            LOGGER.info("[ProfileScanner] No lore found");
         }
 
-        // Запасной вариант — стандартный tooltip
+        // Tooltip как запасной вариант
         List<Text> tooltip = stack.getTooltip(
                 net.minecraft.item.Item.TooltipContext.create(client.world),
                 client.player,
                 net.minecraft.item.tooltip.TooltipType.Default.BASIC
         );
         for (Text line : tooltip) {
+            LOGGER.info("[ProfileScanner] Tooltip: '{}'", line.getString());
             Matcher m = TOKEN_PATTERN.matcher(line.getString());
             if (m.find()) {
                 try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "")); }
