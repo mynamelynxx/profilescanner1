@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.PlayerListEntry;
@@ -35,17 +36,16 @@ public class ProfileScannerMod implements ClientModInitializer {
     private boolean scanning = false;
     private List<String> playerQueue = new ArrayList<>();
     private int currentIndex = 0;
-    private enum Phase { IDLE, SEND_COMMAND, WAIT_FOR_SCREEN, READ_TOKENS, CLOSE_SCREEN, SWITCH_ANARCHY }
+    private enum Phase { IDLE, SEND_COMMAND, WAIT_FOR_SCREEN, READ_TOKENS, CLOSE_SCREEN, SWITCH_ANARCHY, RECONNECTING }
     private Phase phase = Phase.IDLE;
     private long phaseStartTime = 0;
     private volatile boolean chatErrorReceived = false;
     private boolean switchingAnarchy = false;
-    private String foundPlayer = null;
-    private long foundTokens = 0;
     private int currentAnarchy = -1;
     private static final long WAIT_FOR_SCREEN_MS = 3000;
     private static final long READ_TOKENS_DELAY_MS = 300;
     private static final long SWITCH_WAIT_MS = 3000;
+    private static final long RECONNECT_WAIT_MS = 5000;
     private static final int HEAD_SLOT = 4;
     private long tokenThreshold = 120000;
     private static final Pattern TOKEN_PATTERN = Pattern.compile("Токенов:\\s*([\\d,. ]+)");
@@ -54,8 +54,19 @@ public class ProfileScannerMod implements ClientModInitializer {
     public void onInitializeClient() {
         startKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.profilescanner.start", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, "category.profilescanner"));
         stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.profilescanner.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_L, "category.profilescanner"));
+
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> onServerMessage(message.getString()));
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> { if (!overlay) onServerMessage(message.getString()); });
+
+        // При дисконнекте — если сканируем, запускаем реконнект
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            if (scanning) {
+                LOGGER.info("[ProfileScanner] Disconnected, will reconnect...");
+                phase = Phase.RECONNECTING;
+                phaseStartTime = System.currentTimeMillis();
+            }
+        });
+
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(
                 net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal("pstoken")
@@ -75,6 +86,7 @@ public class ProfileScannerMod implements ClientModInitializer {
                         return 1;
                     }));
         });
+
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         LOGGER.info("ProfileScanner loaded.");
     }
@@ -84,6 +96,22 @@ public class ProfileScannerMod implements ClientModInitializer {
     }
 
     private void onTick(MinecraftClient client) {
+        // Реконнект — ждём пока клиент снова подключится
+        if (scanning && phase == Phase.RECONNECTING) {
+            if (client.player != null && client.getNetworkHandler() != null) {
+                long now = System.currentTimeMillis();
+                if (now - phaseStartTime >= RECONNECT_WAIT_MS) {
+                    // Подключились — возвращаемся на анархию и продолжаем
+                    sendCommand(client, "an" + currentAnarchy);
+                    client.player.sendMessage(Text.literal("§e[ProfileScanner] Реконнект! Возвращаюсь на Анархия-" + currentAnarchy + "..."), false);
+                    switchingAnarchy = true;
+                    phase = Phase.WAIT_FOR_SCREEN;
+                    phaseStartTime = now;
+                }
+            }
+            return;
+        }
+
         if (client.player == null || client.getNetworkHandler() == null) return;
         if (stopKey.wasPressed() && scanning) { stopScan(client, "Stopped by player."); return; }
         if (startKey.wasPressed()) {
@@ -95,8 +123,10 @@ public class ProfileScannerMod implements ClientModInitializer {
                 startScan(client);
             }
         }
+
         if (!scanning) return;
         long now = System.currentTimeMillis();
+
         if (switchingAnarchy && phase == Phase.WAIT_FOR_SCREEN) {
             if (now - phaseStartTime >= SWITCH_WAIT_MS) {
                 switchingAnarchy = false;
@@ -108,11 +138,12 @@ public class ProfileScannerMod implements ClientModInitializer {
             }
             return;
         }
+
         switch (phase) {
             case SEND_COMMAND: {
                 if (client.currentScreen != null) client.setScreen(null);
                 if (currentIndex >= playerQueue.size()) {
-                    client.player.sendMessage(Text.literal("§e[ProfileScanner] Никого с " + String.format("%,d", tokenThreshold) + "+ токенов на Анархия-" + currentAnarchy + ". Переход..."), false);
+                    client.player.sendMessage(Text.literal("§e[ProfileScanner] Анархия-" + currentAnarchy + " просмотрена. Переход..."), false);
                     phase = Phase.SWITCH_ANARCHY; phaseStartTime = now; break;
                 }
                 String name = playerQueue.get(currentIndex);
@@ -133,10 +164,10 @@ public class ProfileScannerMod implements ClientModInitializer {
                 long tokens = readTokensFromSlot(client);
                 if (tokens < 0) { if (now - phaseStartTime > 1500) { phase = Phase.CLOSE_SCREEN; } break; }
                 if (tokens >= tokenThreshold) {
-                    foundPlayer = playerQueue.get(currentIndex); foundTokens = tokens;
+                    // Не останавливаемся — просто пишем в чат и играем звук
+                    String name = playerQueue.get(currentIndex);
+                    client.player.sendMessage(Text.literal("§a§l[ProfileScanner] НАЙДЕН: §f" + name + " §a— §f" + String.format("%,d", tokens) + " §aтокенов | Анархия-" + currentAnarchy + "!"), false);
                     client.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
-stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.format("%,d", foundTokens) + " §aтокенов | Анархия-" + currentAnarchy + "!");
-                    return;
                 }
                 phase = Phase.CLOSE_SCREEN; break;
             }
@@ -167,7 +198,7 @@ stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.f
             for (Text line : lore.lines()) {
                 Matcher m = TOKEN_PATTERN.matcher(line.getString());
                 if (m.find()) {
-                    try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "")); }
+                    try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "").trim()); }
                     catch (NumberFormatException ignored) {}
                 }
             }
@@ -181,7 +212,7 @@ stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.f
         for (Text line : tooltip) {
             Matcher m = TOKEN_PATTERN.matcher(line.getString());
             if (m.find()) {
-                try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "")); }
+                try { return Long.parseLong(m.group(1).replaceAll("[\\s,.']+", "").trim()); }
                 catch (NumberFormatException ignored) {}
             }
         }
@@ -211,7 +242,7 @@ stopScan(client, "§aНАЙДЕН: §f" + foundPlayer + " §a— §f" + String.f
     private void startScan(MinecraftClient client) {
         buildPlayerQueue(client);
         if (playerQueue.isEmpty()) { client.player.sendMessage(Text.literal("§c[ProfileScanner] Нет игроков в табе!"), false); return; }
-        currentIndex = 0; scanning = true; foundPlayer = null; chatErrorReceived = false; switchingAnarchy = false;
+        currentIndex = 0; scanning = true; chatErrorReceived = false; switchingAnarchy = false;
         phase = Phase.SEND_COMMAND; phaseStartTime = System.currentTimeMillis();
         client.player.sendMessage(Text.literal("§a[ProfileScanner] Порог: §f" + String.format("%,d", tokenThreshold) + " §aтокенов | Анархия-" + currentAnarchy + " | §f" + playerQueue.size() + " §aигроков | L = стоп."), false);
     }
