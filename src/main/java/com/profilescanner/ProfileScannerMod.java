@@ -278,6 +278,7 @@ public class ProfileScannerMod implements ClientModInitializer {
     }
 
     private void sendCommand(MinecraftClient client, String command) {
-        client.getNetworkHandler().sendChatCommand(command);
-    }
+    LOGGER.info("[ProfileScanner] Sending command: /{}", command);
+    client.getNetworkHandler().sendChatCommand(command);
+}
 }
