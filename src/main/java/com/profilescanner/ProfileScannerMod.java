@@ -43,7 +43,7 @@ public class ProfileScannerMod implements ClientModInitializer {
     private int currentAnarchy = -1;
     private static final long WAIT_FOR_SCREEN_MS = 3000;
     private static final long READ_TOKENS_DELAY_MS = 300;
-    private static final long SWITCH_WAIT_MS = 3000;
+    private static final long SWITCH_WAIT_MS = 5000;
     private static final long RETURN_WAIT_MS = 1500;
     private static final int HEAD_SLOT = 4;
     private long tokenThreshold = 120000;
@@ -104,25 +104,23 @@ public class ProfileScannerMod implements ClientModInitializer {
         if (!scanning) return;
         long now = System.currentTimeMillis();
 
-        // Проверяем не выкинуло ли в хаб (скорборд не показывает анархию)
+        // Проверяем не выкинуло ли в хаб
         if (phase != Phase.RETURNING && phase != Phase.SWITCH_ANARCHY && !switchingAnarchy) {
             int sbAnarchy = readAnarchyFromScoreboard(client);
             if (sbAnarchy < 0) {
                 LOGGER.info("[ProfileScanner] Kicked to hub! Will return to Анархия-{}", currentAnarchy);
                 if (client.currentScreen != null) client.setScreen(null);
                 client.player.sendMessage(Text.literal("§e[ProfileScanner] Выкинуло в хаб! Возвращаюсь на Анархия-" + currentAnarchy + "..."), false);
-                // НЕ сбрасываем currentIndex — продолжим с того же игрока
                 phase = Phase.RETURNING;
                 phaseStartTime = now;
                 return;
             }
         }
 
-        // Фаза возврата
+        // Фаза возврата после кика
         if (phase == Phase.RETURNING) {
             if (now - phaseStartTime >= RETURN_WAIT_MS) {
                 sendCommand(client, "an" + currentAnarchy);
-                // Ждём загрузки анархии перед продолжением
                 switchingAnarchy = true;
                 phase = Phase.WAIT_FOR_SCREEN;
                 phaseStartTime = now;
@@ -130,16 +128,14 @@ public class ProfileScannerMod implements ClientModInitializer {
             return;
         }
 
+        // Ждём загрузки после смены анархии
         if (switchingAnarchy && phase == Phase.WAIT_FOR_SCREEN) {
             if (now - phaseStartTime >= SWITCH_WAIT_MS) {
                 switchingAnarchy = false;
                 chatErrorReceived = false;
-                // При возврате после кика не пересобираем очередь и не сбрасываем индекс
-                // При переходе на новую анархию — пересобираем
-                if (currentIndex >= playerQueue.size()) {
-                    buildPlayerQueue(client);
-                    currentIndex = 0;
-                }
+                // Всегда пересобираем очередь с новым табом
+                buildPlayerQueue(client);
+                currentIndex = 0;
                 if (playerQueue.isEmpty()) { stopScan(client, "Нет игроков на Анархия-" + currentAnarchy); return; }
                 phase = Phase.SEND_COMMAND;
             }
@@ -187,8 +183,6 @@ public class ProfileScannerMod implements ClientModInitializer {
                 sendCommand(client, "an" + currentAnarchy);
                 client.player.sendMessage(Text.literal("§e[ProfileScanner] → §fАнархия-" + currentAnarchy), false);
                 switchingAnarchy = true;
-                buildPlayerQueue(client);
-                currentIndex = 0;
                 phase = Phase.WAIT_FOR_SCREEN; phaseStartTime = now; break;
             }
             default: break;
@@ -268,6 +262,7 @@ public class ProfileScannerMod implements ClientModInitializer {
             String name = entries.get(i).getProfile().getName();
             if (name != null && !name.isBlank()) playerQueue.add(name);
         }
+        LOGGER.info("[ProfileScanner] Built queue with {} players: {}", playerQueue.size(), playerQueue);
     }
 
     private void stopScan(MinecraftClient client, String reason) {
@@ -278,7 +273,7 @@ public class ProfileScannerMod implements ClientModInitializer {
     }
 
     private void sendCommand(MinecraftClient client, String command) {
-    LOGGER.info("[ProfileScanner] Sending command: /{}", command);
-    client.getNetworkHandler().sendChatCommand(command);
-}
+        LOGGER.info("[ProfileScanner] Sending command: /{}", command);
+        client.getNetworkHandler().sendChatCommand(command);
+    }
 }
